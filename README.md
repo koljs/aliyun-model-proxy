@@ -200,6 +200,10 @@ docker build -t dashscope-model-proxy .
 docker run --env-file .env -p 3300:3300 dashscope-model-proxy
 ```
 
+## 社区支持
+
+💬 欢迎到 [linux.do](https://linux.do) 交流、分享和反馈。
+
 ## 说明
 
 冷却状态保存在 `STATE_PATH` 指定的 JSON 文件中，存储内容包括 Key 哈希、模型 ID、冷却截止时间、失败次数和最近错误信息，不保存明文 DashScope API Key。
