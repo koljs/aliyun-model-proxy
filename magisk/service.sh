@@ -3,8 +3,8 @@
 MODDIR=${0%/*}
 DATA_DIR=/data/local/dashscope-proxy
 LOG_FILE="$DATA_DIR/service.log"
-NODE_BIN="$MODDIR/files/node"
 APP_DIR="$MODDIR/files"
+NODE_BIN="$DATA_DIR/node"
 
 # 等待系统启动完成
 while [ "$(getprop sys.boot_completed)" != "1" ]; do
@@ -17,6 +17,12 @@ sleep 10
 # 确保数据目录存在
 mkdir -p "$DATA_DIR"
 mkdir -p "$DATA_DIR/state"
+
+# 将 node 二进制复制到可执行目录（模块目录可能有 noexec 限制）
+if [ ! -x "$NODE_BIN" ]; then
+  cp "$APP_DIR/node" "$NODE_BIN"
+  chmod 755 "$NODE_BIN"
+fi
 
 # 复制默认配置（如果不存在）
 if [ ! -f "$DATA_DIR/config.json" ]; then
