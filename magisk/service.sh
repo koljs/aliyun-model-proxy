@@ -5,6 +5,7 @@ DATA_DIR=/data/local/dashscope-proxy
 LOG_FILE="$DATA_DIR/service.log"
 APP_DIR="$MODDIR/files"
 NODE_BIN="$DATA_DIR/node"
+LINKER="$DATA_DIR/lib/ld-linux-aarch64.so.1"
 
 # 等待系统启动完成
 while [ "$(getprop sys.boot_completed)" != "1" ]; do
@@ -24,6 +25,13 @@ if [ ! -x "$NODE_BIN" ]; then
   chmod 755 "$NODE_BIN"
 fi
 
+# 复制 glibc 运行时库（Android 使用 Bionic libc，需要 glibc 才能运行标准 Linux 二进制）
+if [ ! -x "$LINKER" ]; then
+  mkdir -p "$DATA_DIR/lib"
+  cp "$APP_DIR/lib/"* "$DATA_DIR/lib/"
+  chmod 755 "$DATA_DIR/lib/"*
+fi
+
 # 复制默认配置（如果不存在）
 if [ ! -f "$DATA_DIR/config.json" ]; then
   cp "$APP_DIR/default-config.json" "$DATA_DIR/config.json"
@@ -34,13 +42,13 @@ fi
 export CONFIG_PATH="$DATA_DIR/config.json"
 export STATE_PATH="$DATA_DIR/proxy-state.json"
 export NODE_ENV=production
-export LD_LIBRARY_PATH="/system/lib64:/system/lib:${LD_LIBRARY_PATH:-}"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting dashscope-proxy..." >> "$LOG_FILE"
 
 # 守护进程循环
+# 通过 glibc 动态链接器启动 Node.js（绕过 Android 缺少 /lib/ld-linux-aarch64.so.1 的问题）
 while true; do
-  "$NODE_BIN" "$APP_DIR/dist/index.js" >> "$LOG_FILE" 2>&1
+  "$LINKER" --library-path "$DATA_DIR/lib" "$NODE_BIN" "$APP_DIR/dist/index.js" >> "$LOG_FILE" 2>&1
   EXIT_CODE=$?
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] Process exited with code $EXIT_CODE, restarting in 3s..." >> "$LOG_FILE"
   sleep 3

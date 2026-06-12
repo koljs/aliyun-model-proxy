@@ -11,6 +11,9 @@ NODE_VERSION="22.16.0"
 NODE_ARCH="arm64"
 NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz"
 
+# Ubuntu arm64 rootfs（提供 glibc 运行时库，Android 不包含 glibc）
+UBUNTU_ROOTFS_URL="https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04.5-base-arm64.tar.gz"
+
 # 从 package.json 读取版本
 VERSION=$(node -e "console.log(require('$PROJECT_DIR/package.json').version)")
 
@@ -24,12 +27,12 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$MODULE_DIR"
 
 # 1. 编译 TypeScript
-echo "[1/6] Compiling TypeScript..."
+echo "[1/7] Compiling TypeScript..."
 cd "$PROJECT_DIR"
 pnpm build
 
 # 2. 安装生产依赖
-echo "[2/6] Installing production dependencies..."
+echo "[2/7] Installing production dependencies..."
 mkdir -p "$MODULE_DIR/files/node_modules"
 cp "$PROJECT_DIR/package.json" "$MODULE_DIR/files/"
 cp "$PROJECT_DIR/pnpm-lock.yaml" "$MODULE_DIR/files/"
@@ -38,7 +41,7 @@ pnpm install --frozen-lockfile --prod
 cd "$PROJECT_DIR"
 
 # 3. 下载 Node.js 二进制
-echo "[3/6] Downloading Node.js v${NODE_VERSION} (${NODE_ARCH})..."
+echo "[3/7] Downloading Node.js v${NODE_VERSION} (${NODE_ARCH})..."
 NODE_TAR="$BUILD_DIR/node.tar.xz"
 if [ -f "$NODE_TAR" ]; then
   echo "  Using cached download"
@@ -50,12 +53,48 @@ tar xf "$NODE_TAR" -C "$BUILD_DIR" "node-v${NODE_VERSION}-linux-${NODE_ARCH}/bin
 cp "$BUILD_DIR/node-v${NODE_VERSION}-linux-${NODE_ARCH}/bin/node" "$MODULE_DIR/files/node"
 chmod 755 "$MODULE_DIR/files/node"
 
-# 4. 复制编译产物
-echo "[4/6] Copying application files..."
+# 4. 下载 glibc 运行时库（Android 使用 Bionic libc，需要捆绑 glibc 才能运行标准 Linux 二进制）
+echo "[4/7] Downloading glibc libraries for Android compatibility..."
+ROOTFS_TAR="$BUILD_DIR/ubuntu-rootfs.tar.gz"
+ROOTFS_DIR="$BUILD_DIR/rootfs"
+
+if [ -f "$ROOTFS_TAR" ]; then
+  echo "  Using cached rootfs download"
+else
+  curl -L -o "$ROOTFS_TAR" "$UBUNTU_ROOTFS_URL"
+fi
+
+echo "  Extracting rootfs..."
+rm -rf "$ROOTFS_DIR"
+mkdir -p "$ROOTFS_DIR"
+tar xzf "$ROOTFS_TAR" -C "$ROOTFS_DIR"
+
+LIB_DIR="$MODULE_DIR/files/lib"
+mkdir -p "$LIB_DIR"
+
+# 复制 Node.js 运行所需的 glibc 共享库（跟随符号链接复制实际文件）
+for lib in ld-linux-aarch64.so.1 libc.so.6 libm.so.6 libdl.so.2 librt.so.1 libpthread.so.0 libstdc++.so.6 libgcc_s.so.1; do
+  found=$(find "$ROOTFS_DIR" -name "$lib" \( -type f -o -type l \) | head -1)
+  if [ -n "$found" ]; then
+    cp -L "$found" "$LIB_DIR/"
+    echo "  Copied: $lib"
+  else
+    echo "  WARNING: $lib not found in rootfs"
+  fi
+done
+
+# 验证关键文件
+if [ ! -f "$LIB_DIR/ld-linux-aarch64.so.1" ]; then
+  echo "ERROR: Failed to extract glibc dynamic linker"
+  exit 1
+fi
+
+# 5. 复制编译产物
+echo "[5/7] Copying application files..."
 cp -r "$PROJECT_DIR/dist" "$MODULE_DIR/files/dist"
 
-# 5. 复制 Magisk 模块文件
-echo "[5/6] Creating Magisk module structure..."
+# 6. 复制 Magisk 模块文件
+echo "[6/7] Creating Magisk module structure..."
 cp "$PROJECT_DIR/magisk/module.prop" "$MODULE_DIR/"
 cp "$PROJECT_DIR/magisk/post-fs-data.sh" "$MODULE_DIR/"
 cp "$PROJECT_DIR/magisk/service.sh" "$MODULE_DIR/"
@@ -68,8 +107,8 @@ chmod 755 "$MODULE_DIR/service.sh"
 # 更新 module.prop 版本
 sed -i "s/version=.*/version=v${VERSION}/" "$MODULE_DIR/module.prop"
 
-# 6. 打包 zip
-echo "[6/6] Packaging Magisk module zip..."
+# 7. 打包 zip
+echo "[7/7] Packaging Magisk module zip..."
 ZIP_NAME="dashscope-proxy-magisk-v${VERSION}.zip"
 cd "$MODULE_DIR"
 zip -r "$BUILD_DIR/$ZIP_NAME" .
