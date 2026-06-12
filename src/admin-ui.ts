@@ -249,6 +249,10 @@ function renderConfigTab() {
         <input type="number" id="cfg-port" value="\${cfg.port}" min="1" max="65535">
       </div>
       <div class="field">
+        <label>监听地址</label>
+        <input type="text" id="cfg-hostname" value="\${cfg.hostname}" placeholder="0.0.0.0">
+      </div>
+      <div class="field">
         <label>上游认证模式</label>
         <select id="cfg-auth-mode">
           <option value="authorization"\${cfg.upstreamAuthMode==='authorization'?' selected':''}>Authorization</option>
@@ -372,6 +376,7 @@ function bindConfigTab() {
     const modelIds = $('#cfg-model-ids').value.split('\\n').map(s => s.trim()).filter(Boolean)
     const body = {
       port: Number($('#cfg-port').value),
+      hostname: $('#cfg-hostname').value.trim(),
       proxyApiKeyRaw: $('#cfg-proxy-key').value.trim(),
       dashscopeApiKeysRaw: apiKeys,
       modelIds,
@@ -414,6 +419,7 @@ function bindActionsTab() {
     showConfirm('确定要重置配置吗？此操作不可恢复！', async () => {
       const r = await api('PUT', '/api/config', {
         port: 3300,
+        hostname: '0.0.0.0',
         proxyApiKeyRaw: 'admin',
         dashscopeApiKeysRaw: [],
         modelIds: [],

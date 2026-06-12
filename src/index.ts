@@ -200,6 +200,7 @@ serve(
   {
     fetch: app.fetch,
     port: config.port,
+    hostname: config.hostname,
   },
   (info) => {
     console.log(`[proxy] listening on http://localhost:${info.port}`)

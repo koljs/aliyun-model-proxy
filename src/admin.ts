@@ -34,6 +34,7 @@ export function createAdminRoutes(deps: AdminDeps) {
     const cfg = deps.config
     return c.json({
       port: cfg.port,
+      hostname: cfg.hostname,
       proxyApiKey: cfg.proxyApiKey ? maskKey(cfg.proxyApiKey) : '',
       proxyApiKeySet: cfg.proxyApiKey.length > 0,
       dashscopeApiKeys: cfg.dashscopeApiKeys.map(maskKey),
@@ -62,6 +63,10 @@ export function createAdminRoutes(deps: AdminDeps) {
         return c.json({ error: 'port must be between 1 and 65535' }, 400)
       }
       cfg.port = body.port
+    }
+
+    if (body.hostname !== undefined) {
+      cfg.hostname = body.hostname
     }
 
     if (body.proxyApiKeyRaw !== undefined) {
