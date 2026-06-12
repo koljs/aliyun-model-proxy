@@ -71,8 +71,8 @@ sed -i "s/version=.*/version=v${VERSION}/" "$MODULE_DIR/module.prop"
 # 6. 打包 zip
 echo "[6/6] Packaging Magisk module zip..."
 ZIP_NAME="dashscope-proxy-magisk-v${VERSION}.zip"
-cd "$BUILD_DIR"
-zip -r "$ZIP_NAME" dashscope-proxy/
+cd "$MODULE_DIR"
+zip -r "$BUILD_DIR/$ZIP_NAME" .
 cd "$PROJECT_DIR"
 
 cp "$BUILD_DIR/$ZIP_NAME" "$PROJECT_DIR/$ZIP_NAME"
