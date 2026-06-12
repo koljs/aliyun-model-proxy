@@ -24,7 +24,7 @@ echo ""
 
 # 清理旧构建
 rm -rf "$BUILD_DIR"
-mkdir -p "$MODULE_DIR"
+mkdir -p "$MODULE_DIR/files"
 
 # 1. 使用 esbuild 打包为单文件（无需 node_modules，避免 Android 上符号链接问题）
 echo "[1/6] Bundling with esbuild..."
