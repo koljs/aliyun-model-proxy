@@ -69,8 +69,8 @@ label{display:block;font-size:13px;font-weight:500;color:var(--text2);margin-bot
 .metric-value{font-size:28px;font-weight:700;color:var(--accent2)}
 .metric-label{font-size:12px;color:var(--text3);margin-top:2px}
 
-.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-table{width:100%;border-collapse:collapse;font-size:13px}
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y}
+table{width:100%;min-width:600px;border-collapse:collapse;font-size:13px}
 th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
 th{font-weight:500;color:var(--text3);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
 tr:hover td{background:var(--surface2)}
@@ -263,7 +263,7 @@ function renderConfigTab() {
     </div>
     <div class="field">
       <label>代理密钥 (Proxy API Key)</label>
-      <input type="text" id="cfg-proxy-key" value="\${cfg.proxyApiKey}" placeholder="客户端调用代理时使用的密钥">
+      <input type="text" id="cfg-proxy-key" value="" placeholder="\${cfg.proxyApiKey ? '已设置: ' + cfg.proxyApiKey + '，留空则不修改' : '客户端调用代理时使用的密钥'}">
     </div>
     <div class="field">
       <label>DashScope API Keys <span style="color:var(--text3)">(每行一个)</span></label>
@@ -374,10 +374,10 @@ function bindConfigTab() {
     const btn = $('#save-config-btn')
     const apiKeys = $('#cfg-api-keys').value.split('\\n').map(s => s.trim()).filter(Boolean)
     const modelIds = $('#cfg-model-ids').value.split('\\n').map(s => s.trim()).filter(Boolean)
+    const newProxyKey = $('#cfg-proxy-key').value.trim()
     const body = {
       port: Number($('#cfg-port').value),
       hostname: $('#cfg-hostname').value.trim(),
-      proxyApiKeyRaw: $('#cfg-proxy-key').value.trim(),
       dashscopeApiKeysRaw: apiKeys,
       modelIds,
       upstreamBaseUrl: $('#cfg-upstream').value.trim(),
@@ -386,13 +386,20 @@ function bindConfigTab() {
       upstreamAuthMode: $('#cfg-auth-mode').value,
       corsOrigin: $('#cfg-cors').value.trim(),
     }
+    if (newProxyKey) body.proxyApiKeyRaw = newProxyKey
     btn.textContent = '保存中...'
     btn.disabled = true
     const r = await api('PUT', '/api/config', body)
     if (r.ok) {
       showToast('配置已保存，正在重启...', 'ok')
+      if (newProxyKey) {
+        state.authKey = newProxyKey
+        localStorage.setItem('dp-key', newProxyKey)
+      }
       setTimeout(() => {
         api('POST', '/api/restart').catch(() => {})
+        btn.textContent = '重启中，等待服务恢复...'
+        pollUntilBack()
       }, 500)
     } else {
       showToast(r.data.error || '保存失败', 'err')
@@ -400,6 +407,39 @@ function bindConfigTab() {
       btn.disabled = false
     }
   }
+}
+
+function pollUntilBack() {
+  let attempts = 0
+  const maxAttempts = 30
+  const interval = setInterval(async () => {
+    attempts++
+    if (attempts > maxAttempts) {
+      clearInterval(interval)
+      const btn = $('#save-config-btn')
+      if (btn) {
+        btn.textContent = '保存配置并重启'
+        btn.disabled = false
+      }
+      showToast('服务重启超时，请手动刷新页面', 'err')
+      return
+    }
+    try {
+      const r = await fetch('/admin/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.authKey }
+      })
+      if (r.ok) {
+        clearInterval(interval)
+        await loadConfig()
+        await loadStatus()
+        render()
+        showToast('服务已重启完成', 'ok')
+      }
+    } catch {
+      // service not back yet, keep polling
+    }
+  }, 1000)
 }
 
 function bindActionsTab() {
