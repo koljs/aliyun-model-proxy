@@ -24,15 +24,24 @@ echo ""
 
 # 清理旧构建
 rm -rf "$BUILD_DIR"
-mkdir -p "$MODULE_DIR/files"
+mkdir -p "$MODULE_DIR"
 
-# 1. 使用 esbuild 打包为单文件（无需 node_modules，避免 Android 上符号链接问题）
-echo "[1/6] Bundling with esbuild..."
+# 1. 编译 TypeScript
+echo "[1/7] Compiling TypeScript..."
 cd "$PROJECT_DIR"
-pnpm build:bundle
+pnpm build
 
-# 2. 下载 Node.js 二进制
-echo "[2/6] Downloading Node.js v${NODE_VERSION} (${NODE_ARCH})..."
+# 2. 安装生产依赖
+echo "[2/7] Installing production dependencies..."
+mkdir -p "$MODULE_DIR/files/node_modules"
+cp "$PROJECT_DIR/package.json" "$MODULE_DIR/files/"
+cp "$PROJECT_DIR/pnpm-lock.yaml" "$MODULE_DIR/files/"
+cd "$MODULE_DIR/files"
+pnpm install --frozen-lockfile --prod
+cd "$PROJECT_DIR"
+
+# 3. 下载 Node.js 二进制
+echo "[3/7] Downloading Node.js v${NODE_VERSION} (${NODE_ARCH})..."
 NODE_TAR="$BUILD_DIR/node.tar.xz"
 if [ -f "$NODE_TAR" ]; then
   echo "  Using cached download"
@@ -44,8 +53,8 @@ tar xf "$NODE_TAR" -C "$BUILD_DIR" "node-v${NODE_VERSION}-linux-${NODE_ARCH}/bin
 cp "$BUILD_DIR/node-v${NODE_VERSION}-linux-${NODE_ARCH}/bin/node" "$MODULE_DIR/files/node"
 chmod 755 "$MODULE_DIR/files/node"
 
-# 3. 下载 glibc 运行时库（Android 使用 Bionic libc，需要捆绑 glibc 才能运行标准 Linux 二进制）
-echo "[3/6] Downloading glibc libraries for Android compatibility..."
+# 4. 下载 glibc 运行时库（Android 使用 Bionic libc，需要捆绑 glibc 才能运行标准 Linux 二进制）
+echo "[4/7] Downloading glibc libraries for Android compatibility..."
 ROOTFS_TAR="$BUILD_DIR/ubuntu-rootfs.tar.gz"
 ROOTFS_DIR="$BUILD_DIR/rootfs"
 
@@ -80,13 +89,12 @@ if [ ! -f "$LIB_DIR/ld-linux-aarch64.so.1" ]; then
   exit 1
 fi
 
-# 4. 复制编译产物（单文件 bundle，无需 node_modules）
-echo "[4/6] Copying application files..."
-mkdir -p "$MODULE_DIR/files/dist"
-cp "$PROJECT_DIR/dist/index.js" "$MODULE_DIR/files/dist/index.js"
+# 5. 复制编译产物
+echo "[5/7] Copying application files..."
+cp -r "$PROJECT_DIR/dist" "$MODULE_DIR/files/dist"
 
-# 5. 复制 Magisk 模块文件
-echo "[5/6] Creating Magisk module structure..."
+# 6. 复制 Magisk 模块文件
+echo "[6/7] Creating Magisk module structure..."
 cp "$PROJECT_DIR/magisk/module.prop" "$MODULE_DIR/"
 cp "$PROJECT_DIR/magisk/post-fs-data.sh" "$MODULE_DIR/"
 cp "$PROJECT_DIR/magisk/service.sh" "$MODULE_DIR/"
@@ -99,8 +107,8 @@ chmod 755 "$MODULE_DIR/service.sh"
 # 更新 module.prop 版本
 sed -i "s/version=.*/version=v${VERSION}/" "$MODULE_DIR/module.prop"
 
-# 6. 打包 zip
-echo "[6/6] Packaging Magisk module zip..."
+# 7. 打包 zip
+echo "[7/7] Packaging Magisk module zip..."
 ZIP_NAME="dashscope-proxy-magisk-v${VERSION}.zip"
 cd "$MODULE_DIR"
 zip -r "$BUILD_DIR/$ZIP_NAME" .
