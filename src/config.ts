@@ -6,6 +6,7 @@ export type UpstreamAuthMode = 'authorization' | 'x-api-key' | 'both'
 
 export interface PersistedConfig {
   port?: number
+  hostname?: string
   proxyApiKey?: string
   dashscopeApiKeys?: string[]
   upstreamBaseUrl?: string
@@ -19,6 +20,7 @@ export interface PersistedConfig {
 
 export interface AppConfig {
   port: number
+  hostname: string
   proxyApiKey: string
   dashscopeApiKeys: string[]
   upstreamBaseUrl: string
@@ -119,6 +121,7 @@ export function loadConfig(): AppConfig {
 export function saveConfig(config: AppConfig): void {
   const json: PersistedConfig = {
     port: config.port,
+    hostname: config.hostname,
     proxyApiKey: config.proxyApiKey,
     dashscopeApiKeys: config.dashscopeApiKeys,
     upstreamBaseUrl: config.upstreamBaseUrl,
@@ -147,6 +150,7 @@ function loadJsonConfig(path: string): PersistedConfig {
 
 function jsonConfigToAppConfig(json: PersistedConfig, configPath: string): AppConfig {
   const port = json.port ?? parsePositiveNumber('PORT', 3000)
+  const hostname = json.hostname || optionalEnv('HOSTNAME') || '0.0.0.0'
   const proxyApiKey = json.proxyApiKey || optionalEnv('PROXY_API_KEY') || ''
   const dashscopeApiKeys = json.dashscopeApiKeys?.length
     ? [...new Set(json.dashscopeApiKeys.map((k) => k.trim()).filter(Boolean))]
@@ -160,6 +164,7 @@ function jsonConfigToAppConfig(json: PersistedConfig, configPath: string): AppCo
 
   return {
     port,
+    hostname,
     proxyApiKey,
     dashscopeApiKeys,
     upstreamBaseUrl: json.upstreamBaseUrl || optionalEnv('UPSTREAM_BASE_URL') || 'https://dashscope.aliyuncs.com/apps/anthropic',
@@ -176,6 +181,7 @@ function jsonConfigToAppConfig(json: PersistedConfig, configPath: string): AppCo
 function envConfigToAppConfig(configPath: string): AppConfig {
   return {
     port: parsePositiveNumber('PORT', 3000),
+    hostname: optionalEnv('HOSTNAME') || '0.0.0.0',
     proxyApiKey: requireEnv('PROXY_API_KEY'),
     dashscopeApiKeys: parseDashscopeApiKeys(),
     upstreamBaseUrl: optionalEnv('UPSTREAM_BASE_URL') || 'https://dashscope.aliyuncs.com/apps/anthropic',

@@ -28,6 +28,7 @@ fi
 export CONFIG_PATH="$DATA_DIR/config.json"
 export STATE_PATH="$DATA_DIR/proxy-state.json"
 export NODE_ENV=production
+export LD_LIBRARY_PATH="/system/lib64:/system/lib:${LD_LIBRARY_PATH:-}"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting dashscope-proxy..." >> "$LOG_FILE"
 
