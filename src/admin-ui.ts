@@ -365,7 +365,12 @@ function bindMain() {
     render()
   }
   if (state.tab === 'config') bindConfigTab()
-  if (state.tab === 'status') loadStatus().then(render)
+  if (state.tab === 'status') {
+    loadStatus().then(() => {
+      const content = $('#tab-content')
+      if (content) content.innerHTML = renderStatusTab()
+    })
+  }
   if (state.tab === 'actions') bindActionsTab()
 }
 
