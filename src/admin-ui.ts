@@ -37,7 +37,7 @@ label{display:block;font-size:13px;font-weight:500;color:var(--text2);margin-bot
 .tab:hover{color:var(--text)}
 .tab.active{background:var(--surface2);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.3)}
 
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px;margin-bottom:16px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px;margin-bottom:16px;overflow:hidden}
 .card-title{font-size:15px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px}
 .card-title .icon{font-size:18px}
 
@@ -389,29 +389,43 @@ function bindConfigTab() {
     if (newProxyKey) body.proxyApiKeyRaw = newProxyKey
     btn.textContent = '保存中...'
     btn.disabled = true
-    const r = await api('PUT', '/api/config', body)
-    if (r.ok) {
-      showToast('配置已保存，正在重启...', 'ok')
-      if (newProxyKey) {
-        state.authKey = newProxyKey
-        localStorage.setItem('dp-key', newProxyKey)
+    try {
+      const r = await api('PUT', '/api/config', body)
+      if (!r.ok) {
+        showToast(r.data.error || '保存失败', 'err')
+        btn.textContent = '保存配置并重启'
+        btn.disabled = false
+        return
       }
-      setTimeout(() => {
-        api('POST', '/api/restart').catch(() => {})
-        btn.textContent = '重启中，等待服务恢复...'
-        pollUntilBack()
-      }, 500)
-    } else {
-      showToast(r.data.error || '保存失败', 'err')
+    } catch (e) {
+      showToast('保存失败，网络错误', 'err')
       btn.textContent = '保存配置并重启'
       btn.disabled = false
+      return
     }
+    showToast('配置已保存，正在重启...', 'ok')
+    if (newProxyKey) {
+      state.authKey = newProxyKey
+      localStorage.setItem('dp-key', newProxyKey)
+    }
+    btn.textContent = '重启中...'
+    // 发送重启请求，不使用 api() 避免响应解析失败
+    try {
+      await fetch('/admin/api/restart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.authKey }
+      })
+    } catch (e) {
+      // 服务端重启导致连接断开，这是正常的
+    }
+    // 等待服务恢复后自动刷新
+    pollUntilBack()
   }
 }
 
 function pollUntilBack() {
   let attempts = 0
-  const maxAttempts = 30
+  const maxAttempts = 60
   const interval = setInterval(async () => {
     attempts++
     if (attempts > maxAttempts) {
@@ -425,10 +439,8 @@ function pollUntilBack() {
       return
     }
     try {
-      const r = await fetch('/admin/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.authKey }
-      })
+      // 使用 /health 端点检测服务是否恢复（无需认证）
+      const r = await fetch('/health')
       if (r.ok) {
         clearInterval(interval)
         await loadConfig()
@@ -436,8 +448,8 @@ function pollUntilBack() {
         render()
         showToast('服务已重启完成', 'ok')
       }
-    } catch {
-      // service not back yet, keep polling
+    } catch (e) {
+      // 服务尚未恢复，继续轮询
     }
   }, 1000)
 }
@@ -450,9 +462,36 @@ function bindActionsTab() {
     })
   }
   $('#restart-btn').onclick = () => {
-    showConfirm('确定要重启服务吗？', () => {
+    showConfirm('确定要重启服务吗？', async () => {
       showToast('正在重启...', 'ok')
-      api('POST', '/api/restart').catch(() => {})
+      try {
+        await fetch('/admin/api/restart', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + state.authKey }
+        })
+      } catch (e) {
+        // 服务端重启导致连接断开，这是正常的
+      }
+      // 轮询等待服务恢复
+      let attempts = 0
+      const check = setInterval(async () => {
+        attempts++
+        if (attempts > 60) {
+          clearInterval(check)
+          showToast('重启超时，请手动刷新', 'err')
+          return
+        }
+        try {
+          const r = await fetch('/health')
+          if (r.ok) {
+            clearInterval(check)
+            await loadConfig()
+            await loadStatus()
+            render()
+            showToast('服务已重启完成', 'ok')
+          }
+        } catch (e) {}
+      }, 1000)
     })
   }
   $('#reset-config-btn').onclick = () => {
@@ -473,7 +512,27 @@ function bindActionsTab() {
         showToast('配置已重置，正在重启...', 'ok')
         state.authKey = 'admin'
         localStorage.setItem('dp-key', 'admin')
-        setTimeout(() => api('POST', '/api/restart').catch(() => {}), 500)
+        try {
+          await fetch('/admin/api/restart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer admin' }
+          })
+        } catch (e) {}
+        let attempts = 0
+        const check = setInterval(async () => {
+          attempts++
+          if (attempts > 60) { clearInterval(check); return }
+          try {
+            const hr = await fetch('/health')
+            if (hr.ok) {
+              clearInterval(check)
+              await loadConfig()
+              await loadStatus()
+              render()
+              showToast('服务已重启完成', 'ok')
+            }
+          } catch (e) {}
+        }, 1000)
       } else {
         showToast('重置失败', 'err')
       }
