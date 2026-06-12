@@ -1,0 +1,6 @@
+id=dashscope-proxy
+name=DashScope Model Proxy
+version=v0.1.0
+versionCode=1
+author=dashscope-proxy
+description=阿里云百炼模型代理服务，支持多Key多模型自动切换，提供Web管理后台

@@ -5,6 +5,7 @@ import type { Context, Next } from 'hono'
 import { loadConfig } from './config.js'
 import { ModelPool } from './model-pool.js'
 import { StateStore } from './state-store.js'
+import { createAdminRoutes } from './admin.js'
 import { jsonResponse, proxyAnthropicRequest, proxyOpenAIRequest } from './upstream.js'
 
 const config = loadConfig()
@@ -22,7 +23,7 @@ if (config.corsOrigin !== false) {
     '*',
     cors({
       origin: config.corsOrigin,
-      allowMethods: ['GET', 'POST', 'OPTIONS'],
+      allowMethods: ['GET', 'POST', 'PUT', 'OPTIONS'],
       allowHeaders: [
         'authorization',
         'content-type',
@@ -39,10 +40,12 @@ if (config.corsOrigin !== false) {
 
 app.use('*', requestLogger)
 
+app.route('/admin', createAdminRoutes({ config, modelPool, stateStore }))
+
 app.get('/', (c) => {
   return c.json({
     name: 'dashscope-model-proxy',
-    endpoints: ['/health', '/models/status', '/v1/models', '/v1/messages', '/v1/chat/completions'],
+    endpoints: ['/health', '/admin', '/models/status', '/v1/models', '/v1/messages', '/v1/chat/completions'],
   })
 })
 
@@ -200,20 +203,39 @@ serve(
   },
   (info) => {
     console.log(`[proxy] listening on http://localhost:${info.port}`)
+    console.log(`[proxy] admin panel: http://localhost:${info.port}/admin`)
     console.log(`[proxy] upstream base: ${config.upstreamBaseUrl}`)
     console.log(`[proxy] openai upstream base: ${config.openAIUpstreamBaseUrl}`)
     console.log(`[proxy] api keys loaded: ${config.dashscopeApiKeys.length}`)
     console.log(`[proxy] models per key: ${config.modelIds.length}`)
-    console.log('[proxy] applied model ids:')
-    for (const modelId of config.modelIds) {
-      console.log(`[proxy]   - ${modelId}`)
+    if (config.modelIds.length > 0) {
+      console.log('[proxy] applied model ids:')
+      for (const modelId of config.modelIds) {
+        console.log(`[proxy]   - ${modelId}`)
+      }
     }
-    console.log('[proxy] reminder: 请在 DashScope/百炼控制台为以上模型开启“模型用完即停”。')
+    if (config.dashscopeApiKeys.length === 0 || config.modelIds.length === 0) {
+      console.log('[proxy] WARNING: DashScope API Keys 或模型 ID 未配置，请访问管理后台进行配置')
+    }
+    console.log('[proxy] reminder: 请在 DashScope/百炼控制台为以上模型开启"模型用完即停"。')
     console.log(`[proxy] state file: ${config.statePath}`)
+    console.log(`[proxy] config file: ${config.configPath}`)
   },
 )
 
 async function requireProxyKey(c: Context, next: Next): Promise<Response | void> {
+  if (!config.proxyApiKey) {
+    return c.json(
+      {
+        error: {
+          type: 'configuration_error',
+          message: 'Proxy API key not configured. Please configure via admin panel.',
+        },
+      },
+      503,
+    )
+  }
+
   if (!isAuthorized(c.req.raw.headers, config.proxyApiKey)) {
     return c.json(
       {
