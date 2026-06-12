@@ -110,6 +110,18 @@ export class StateStore {
     this.persist()
   }
 
+  clearAllCooldowns(now = Date.now()): void {
+    for (const key of Object.keys(this.state.modelState)) {
+      const entry = this.state.modelState[key]
+      if (!entry) continue
+      entry.cooldownUntil = 0
+      entry.failureCount = 0
+      entry.lastError = null
+      entry.updatedAt = now
+    }
+    this.persist()
+  }
+
   close(): void {
     // State changes are persisted synchronously when they happen.
   }

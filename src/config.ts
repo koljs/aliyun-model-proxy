@@ -1,6 +1,21 @@
 import 'dotenv/config'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 
 export type UpstreamAuthMode = 'authorization' | 'x-api-key' | 'both'
+
+export interface PersistedConfig {
+  port?: number
+  proxyApiKey?: string
+  dashscopeApiKeys?: string[]
+  upstreamBaseUrl?: string
+  openAIUpstreamBaseUrl?: string
+  modelIds?: string[]
+  cooldownSeconds?: number
+  upstreamAuthMode?: UpstreamAuthMode
+  corsOrigin?: string | false
+  statePath?: string
+}
 
 export interface AppConfig {
   port: number
@@ -13,7 +28,10 @@ export interface AppConfig {
   upstreamAuthMode: UpstreamAuthMode
   corsOrigin: string | false
   statePath: string
+  configPath: string
 }
+
+const DEFAULT_CONFIG_PATH = './data/config.json'
 
 function requireEnv(name: string): string {
   const value = process.env[name]?.trim()
@@ -21,6 +39,10 @@ function requireEnv(name: string): string {
     throw new Error(`Missing required environment variable: ${name}`)
   }
   return value
+}
+
+function optionalEnv(name: string): string | undefined {
+  return process.env[name]?.trim() || undefined
 }
 
 function parsePositiveNumber(name: string, fallback: number): number {
@@ -79,19 +101,110 @@ function parseCorsOrigin(): string | false {
 }
 
 export function loadConfig(): AppConfig {
+  const configPath = resolve(process.env.CONFIG_PATH?.trim() || DEFAULT_CONFIG_PATH)
+
+  if (existsSync(configPath)) {
+    try {
+      const json = loadJsonConfig(configPath)
+      return jsonConfigToAppConfig(json, configPath)
+    } catch (error) {
+      console.warn(`[config] failed to load JSON config from ${configPath}:`, error)
+      console.warn('[config] falling back to environment variables')
+    }
+  }
+
+  return envConfigToAppConfig(configPath)
+}
+
+export function saveConfig(config: AppConfig): void {
+  const json: PersistedConfig = {
+    port: config.port,
+    proxyApiKey: config.proxyApiKey,
+    dashscopeApiKeys: config.dashscopeApiKeys,
+    upstreamBaseUrl: config.upstreamBaseUrl,
+    openAIUpstreamBaseUrl: config.openAIUpstreamBaseUrl,
+    modelIds: config.modelIds,
+    cooldownSeconds: config.cooldownMs / 1000,
+    upstreamAuthMode: config.upstreamAuthMode,
+    corsOrigin: config.corsOrigin,
+    statePath: config.statePath,
+  }
+
+  mkdirSync(dirname(config.configPath), { recursive: true })
+  writeFileSync(config.configPath, JSON.stringify(json, null, 2) + '\n', 'utf8')
+}
+
+function loadJsonConfig(path: string): PersistedConfig {
+  const content = readFileSync(path, 'utf8')
+  const parsed = JSON.parse(content)
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('config file must be a JSON object')
+  }
+
+  return parsed as PersistedConfig
+}
+
+function jsonConfigToAppConfig(json: PersistedConfig, configPath: string): AppConfig {
+  const port = json.port ?? parsePositiveNumber('PORT', 3000)
+  const proxyApiKey = json.proxyApiKey || optionalEnv('PROXY_API_KEY') || ''
+  const dashscopeApiKeys = json.dashscopeApiKeys?.length
+    ? [...new Set(json.dashscopeApiKeys.map((k) => k.trim()).filter(Boolean))]
+    : tryParseDashscopeApiKeys() || []
+  const modelIds = json.modelIds?.length
+    ? [...new Set(json.modelIds.map((m) => m.trim()).filter(Boolean))]
+    : tryParseModelIds() || []
+  const cooldownSeconds = json.cooldownSeconds ?? parsePositiveNumber('MODEL_COOLDOWN_SECONDS', 2592000)
+  const upstreamAuthMode = isValidAuthMode(json.upstreamAuthMode) ? json.upstreamAuthMode : parseUpstreamAuthMode()
+  const corsOrigin = json.corsOrigin !== undefined ? json.corsOrigin : parseCorsOrigin()
+
+  return {
+    port,
+    proxyApiKey,
+    dashscopeApiKeys,
+    upstreamBaseUrl: json.upstreamBaseUrl || optionalEnv('UPSTREAM_BASE_URL') || 'https://dashscope.aliyuncs.com/apps/anthropic',
+    openAIUpstreamBaseUrl: json.openAIUpstreamBaseUrl || optionalEnv('OPENAI_UPSTREAM_BASE_URL') || 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    modelIds,
+    cooldownMs: cooldownSeconds * 1000,
+    upstreamAuthMode,
+    corsOrigin,
+    statePath: json.statePath || optionalEnv('STATE_PATH') || './data/proxy-state.json',
+    configPath,
+  }
+}
+
+function envConfigToAppConfig(configPath: string): AppConfig {
   return {
     port: parsePositiveNumber('PORT', 3000),
     proxyApiKey: requireEnv('PROXY_API_KEY'),
     dashscopeApiKeys: parseDashscopeApiKeys(),
-    upstreamBaseUrl:
-      process.env.UPSTREAM_BASE_URL?.trim() || 'https://dashscope.aliyuncs.com/apps/anthropic',
-    openAIUpstreamBaseUrl:
-      process.env.OPENAI_UPSTREAM_BASE_URL?.trim() ||
-      'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    upstreamBaseUrl: optionalEnv('UPSTREAM_BASE_URL') || 'https://dashscope.aliyuncs.com/apps/anthropic',
+    openAIUpstreamBaseUrl: optionalEnv('OPENAI_UPSTREAM_BASE_URL') || 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     modelIds: parseModelIds(),
     cooldownMs: parsePositiveNumber('MODEL_COOLDOWN_SECONDS', 2592000) * 1000,
     upstreamAuthMode: parseUpstreamAuthMode(),
     corsOrigin: parseCorsOrigin(),
-    statePath: process.env.STATE_PATH?.trim() || './data/proxy-state.json',
+    statePath: optionalEnv('STATE_PATH') || './data/proxy-state.json',
+    configPath,
   }
+}
+
+function tryParseDashscopeApiKeys(): string[] | null {
+  try {
+    return parseDashscopeApiKeys()
+  } catch {
+    return null
+  }
+}
+
+function tryParseModelIds(): string[] | null {
+  try {
+    return parseModelIds()
+  } catch {
+    return null
+  }
+}
+
+function isValidAuthMode(value: unknown): value is UpstreamAuthMode {
+  return value === 'authorization' || value === 'x-api-key' || value === 'both'
 }

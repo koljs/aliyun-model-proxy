@@ -1,0 +1,12 @@
+{
+  "port": 3300,
+  "proxyApiKey": "admin",
+  "dashscopeApiKeys": [],
+  "upstreamBaseUrl": "https://dashscope.aliyuncs.com/apps/anthropic",
+  "openAIUpstreamBaseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "modelIds": [],
+  "cooldownSeconds": 2592000,
+  "upstreamAuthMode": "authorization",
+  "corsOrigin": "*",
+  "statePath": "/data/local/dashscope-proxy/proxy-state.json"
+}
