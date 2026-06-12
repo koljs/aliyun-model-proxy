@@ -142,13 +142,23 @@ async function checkAuth(key) {
 
 async function loadConfig() {
   const r = await api('GET', '/api/config')
-  if (r.ok) state.config = r.data
+  if (r.ok) {
+    state.config = r.data
+  } else {
+    console.error('[loadConfig] failed:', r.status, r.data)
+    showToast('加载配置失败: ' + (r.data.error || '未知错误'), 'err')
+  }
   return r
 }
 
 async function loadStatus() {
   const r = await api('GET', '/api/status')
-  if (r.ok) state.status = r.data
+  if (r.ok) {
+    state.status = r.data
+  } else {
+    console.error('[loadStatus] failed:', r.status, r.data)
+    showToast('加载状态失败: ' + (r.data.error || '未知错误'), 'err')
+  }
   return r
 }
 
@@ -190,6 +200,8 @@ function bindLogin() {
     if (r.ok) {
       state.authKey = key
       localStorage.setItem('dp-key', key)
+      await loadConfig()
+      await loadStatus()
       render()
     } else {
       btn.textContent = '登录'
@@ -239,7 +251,7 @@ function renderTabContent() {
 
 function renderConfigTab() {
   const cfg = state.config
-  if (!cfg) return '<div class="card"><p style="color:var(--text3)">加载中...</p></div>'
+  if (!cfg) return '<div class="card"><p style="color:var(--text3)">加载中...</p><button class="btn-outline btn-sm" id="retry-config-btn" style="margin-top:12px">重试</button></div>'
   return \`
   <div class="card">
     <div class="card-title"><span class="icon">\\u2699</span> 服务配置</div>
@@ -370,6 +382,16 @@ function bindMain() {
 }
 
 function bindConfigTab() {
+  const retryBtn = $('#retry-config-btn')
+  if (retryBtn) {
+    retryBtn.onclick = async () => {
+      retryBtn.textContent = '加载中...'
+      retryBtn.disabled = true
+      await loadConfig()
+      render()
+    }
+    return
+  }
   $('#save-config-btn').onclick = async () => {
     const btn = $('#save-config-btn')
     const apiKeys = $('#cfg-api-keys').value.split('\\n').map(s => s.trim()).filter(Boolean)
@@ -496,6 +518,7 @@ async function init() {
       localStorage.removeItem('dp-key')
     } else {
       await loadConfig()
+      await loadStatus()
     }
   }
   render()
