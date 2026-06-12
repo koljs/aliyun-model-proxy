@@ -31,13 +31,12 @@ echo "[1/7] Compiling TypeScript..."
 cd "$PROJECT_DIR"
 pnpm build
 
-# 2. 安装生产依赖
+# 2. 安装生产依赖（使用 npm 而非 pnpm，避免符号链接在 Android 上无法解析）
 echo "[2/7] Installing production dependencies..."
 mkdir -p "$MODULE_DIR/files/node_modules"
 cp "$PROJECT_DIR/package.json" "$MODULE_DIR/files/"
-cp "$PROJECT_DIR/pnpm-lock.yaml" "$MODULE_DIR/files/"
 cd "$MODULE_DIR/files"
-pnpm install --frozen-lockfile --prod
+npm install --omit=dev --no-package-lock
 cd "$PROJECT_DIR"
 
 # 3. 下载 Node.js 二进制
